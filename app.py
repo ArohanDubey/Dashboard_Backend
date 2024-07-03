@@ -22,7 +22,7 @@ os.makedirs(app.config['static'], exist_ok=True)  # Ensure the HTML folder exist
 # Global variable to store the dataframe
 df = None
 
-MAX_RETRIES = 5
+MAX_RETRIES = 4
 retries = 0
 
 @app.route('/')
