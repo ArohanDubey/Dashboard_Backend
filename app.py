@@ -32,7 +32,6 @@ def home():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global df
-    global MAX_RETRIES
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
 
@@ -40,11 +39,18 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    if file and file.filename.endswith('.csv'):
-        df = pd.read_csv(file)
+    if file:
+        filename = file.filename
+        if filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+            df = pd.read_excel(file)
+        else:
+            return jsonify({'error': 'Invalid file type, please upload a CSV, XLSX, or XLS file'}), 400
+        
         return jsonify({'message': 'File uploaded successfully'})
     else:
-        return jsonify({'error': 'Invalid file type, please upload a CSV file'}), 400
+        return jsonify({'error': 'Invalid file type, please upload a CSV, XLSX, or XLS file'}), 400
 
 @app.route('/analyze', methods=['GET'])
 def analyze_data():
