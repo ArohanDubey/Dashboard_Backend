@@ -57,12 +57,13 @@ def upload_file():
 @app.route('/analyze', methods=['GET'])
 def analyze_data():
     global df
+    filename="enhanced_interactive_graph.html"
     if df is None:
         return jsonify({'error': 'No data uploaded. Please upload a CSV file first.'}), 400
     try:
-        plotly_code = get_plotly_code_from_gpt(df)
-        html_file_path = execute_plotly_code(plotly_code, df, 0)
-        return send_from_directory(app.config['static'], "enhanced_interactive_graph.html")
+        plotly_code = get_plotly_code_from_gpt(df,ipPrompt="")
+        html_file_path = execute_plotly_code(plotly_code, df,filename, 0)
+        return send_from_directory(app.config['static'], os.path.basename(html_file_path))
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
     except Exception as e:
@@ -77,37 +78,61 @@ def generate_dashboard():
 
     try:
         summary_json = get_summary_from_gpt(df)
-        dashboard_data = create_dashboard(summary_json, df)
-        
+        bar_html = get_Bargraph(df)
+        line_html = get_Linechart(df)
+        pie_html = get_Piechart(df)
+
         return jsonify({
             'message': 'Dashboard created successfully.',
-            'summary': dashboard_data['summary'],
-            'graphs': dashboard_data['graphs']
+            'summary': summary_json,
+            'graphs': {
+                'bar': bar_html,
+                'line': line_html,
+                'pie': pie_html
+            }
         })
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-@app.route('/bargraph', methods=['GET'])
-def get_bargraph():
-    return send_from_directory(app.config['static'], "bargraph.html")
 
-@app.route('/linegraph', methods=['GET'])
-def get_linegraph():
-    return send_from_directory(app.config['static'], "linegraph.html")
+def get_Bargraph(df, error_message=None):
+    barPrompt = "Generate Python code using Plotly to create an enhanced interactive Bar graph."
+    filename = "enhanced_interactive_bar_graph.html"
+    plotly_code = get_plotly_code_from_gpt(df, barPrompt)
+    execute_plotly_code(plotly_code, df, filename)
+    with open(os.path.join(app.config['static'], filename), 'r', encoding='utf-8') as file:
+        bar_html = file.read()
+    return bar_html
 
-@app.route('/piechart', methods=['GET'])
-def get_piechart():
-    return send_from_directory(app.config['static'], "piechart.html")
+def get_Linechart(df, error_message=None):
+    linePrompt = "Generate Python code using Plotly to create an enhanced interactive Line Chart."
+    filename = "enhanced_interactive_Line_chart.html"
+    plotly_code = get_plotly_code_from_gpt(df, linePrompt)
+    execute_plotly_code(plotly_code, df, filename)
+    with open(os.path.join(app.config['static'], filename), 'r', encoding='utf-8') as file:
+        line_html = file.read()
+    return line_html
 
-def get_plotly_code_from_gpt(dataframe, error_message=None):
-    data_description = dataframe.describe(include='all').to_string()
+def get_Piechart(df, error_message=None):
+    piePrompt = "Generate Python code using Plotly to create an enhanced interactive Pie chart."
+    filename = "enhanced_interactive_Pie_chart.html"
+    plotly_code = get_plotly_code_from_gpt(df, piePrompt)
+    execute_plotly_code(plotly_code, df, filename)
+    with open(os.path.join(app.config['static'], filename), 'r', encoding='utf-8') as file:
+        pie_html = file.read()
+    return pie_html
+
+
+def get_plotly_code_from_gpt(dataframe,ipPrompt, error_message=None):
+    data_description = request.args.get('input')
+    app.logger.info(data_description)
     prompt = f"""
     Given the following data description:
     {data_description}
    
-    Generate Python code using Plotly to create an enhanced interactive graph.
+    {ipPrompt}
     The graph should be colorful, attractive, and appealing.
     It should include dynamic range colors, annotations for key points, and interactivity.
     The data contains columns representing different metrics. Use appropriate graph types based on data characteristics.
@@ -155,7 +180,7 @@ def get_plotly_code_from_gpt(dataframe, error_message=None):
             if attempt == retries - 1:
                 raise
 
-def execute_plotly_code(coder, dataframe, retries=0):
+def execute_plotly_code(coder, dataframe, filename, retries=0):
     if retries < MAX_RETRIES:
         try:
             code = coder.replace("fig.show()", "")
@@ -167,7 +192,7 @@ def execute_plotly_code(coder, dataframe, retries=0):
             if not os.path.exists(static_dir):
                 os.makedirs(static_dir)
 
-            html_file_path = os.path.join(static_dir, 'enhanced_interactive_graph.html')
+            html_file_path = os.path.join(static_dir, filename)
             app.logger.info(f"Saving HTML file to: {html_file_path}")
             fig.write_html(html_file_path, full_html=False)
 
@@ -176,7 +201,7 @@ def execute_plotly_code(coder, dataframe, retries=0):
             retries += 1
             error_message = str(e)
             print(f"Retry {retries} failed with error: {error_message}")
-            coder = get_plotly_code_from_gpt(df, error_message=error_message)
+            coder = get_plotly_code_from_gpt(df, ipPrompt="" ,error_message=error_message)
             return execute_plotly_code(coder, df, retries)
     else:
         raise Exception(f"Failed after {MAX_RETRIES} retries: {error_message}")
@@ -221,9 +246,7 @@ def get_summary_from_gpt(dataframe, retries=3):
 
 
 def create_dashboard(summary, dataframe):
-    fig_line = px.line(dataframe, x=dataframe.columns[0], y=dataframe.columns[1], title='Line Graph')
-    fig_bar = px.bar(dataframe, x=dataframe.columns[0], y=dataframe.columns[1], title='Bar Graph')
-    fig_pie = px.pie(dataframe, names=dataframe.columns[0], values=dataframe.columns[1], title='Pie Chart')
+    
 
     static_dir = os.path.join(app.root_path, 'static')
     if not os.path.exists(static_dir):
@@ -233,9 +256,7 @@ def create_dashboard(summary, dataframe):
     linegraph_html_path = os.path.join(static_dir, 'linegraph.html')
     piechart_html_path = os.path.join(static_dir, 'piechart.html')
 
-    fig_line.write_html(linegraph_html_path, full_html=True, include_plotlyjs=False)
-    fig_bar.write_html(bargraph_html_path, full_html=True, include_plotlyjs=False)
-    fig_pie.write_html(piechart_html_path, full_html=True, include_plotlyjs=False)
+    
 
     graph_paths = {
         'bargraph': 'bargraph.html',
